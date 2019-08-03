@@ -571,13 +571,382 @@ def write(self, fp, space_around_delimiters=True):
       
 def _write_section(self, fp, section_name, section_items, delimiter):
   """ """
-  fp.write("".format(section_name))
+  fp.write("[{}]\n".format(section_name))
   for key, value in section_items:
-    value = self.
+    value = self._interpolation.before_write(self, section_name, key,
+        value)
+    if value is not None or not self._allow_no_value:
+      value = delimiter + str(value).replace('\n', '\n\t')
+    else:
+      value = ""
+    fp.write("".format(key, value))
   fp.write("\n")
 
+def remove_option(self, section, option):
+  """ """
+  if not section or section == self.default_section:
+    sectdict = self._defaults
+  else:
+    try:
+      sectdict = self._sections[section]
+    except KeyError:
+      raise NoSectionError(section) from Noe
+  option = self.optionform(option)
+  existed = option in sectdict
+  if existed:
+    del sectdict[option]
+  return existed
+  
+def remove_section(self, section):
+  """ """
+  existed = section in self._sections
+  if existed:
+    del self._sections[section]
+    del self._proxies[section]
+  return existed
 
+def __getitem__(self, key):
+  if key != self.default_section and not self.has_section(key):
+    raise KeyError(key)
+  return self._proxies[key]
 
+def __getitem__(self, key):
+  if key != self.default_section and not self.has_section(key):
+    raise KeyError(key)
+  return self._proxies[key]
+
+def __setitem__(self, key, value):
+  if key in self and self[key] is value:
+    return
+  elif key in self._sections:
+    self._sections[key]._sections:
+  self.read_dict({key: value})
+    self._sections[key].clear()
+  self.read_dict({key: value})
+
+def __delitem__(self, key):
+  if key == self.default_section:
+    raise ValueError("Cannot remove the default section.")
+  if not self.has_section(key):
+    raise KeyError(key)
+  self.remove_section(key)
+  
+def __contains__(self, key):
+  return key == self.default_section or self.has_section(key)
+
+def __len__(self):
+  return len(self._sections) + 1
+  
+def __iter__(self):
+  return itertools.chain((self.default_section,), self._sections.keys())
+
+def __read(self, fp, fpname):
+  """
+  """
+  elements_added = set()
+  cursect = None
+  sectname = None
+  optname = None
+  lineno = 0
+  indent_level = 0
+  e = None
+  for lineno, line in enumerate(fp, start=1):
+    comment_start = sys.maxsize
+    inline_prefixes = {p: -1 for p in self._inline_comment_prefixes}
+    while comment_start == sys.maxsize and inline_prefixes:
+      next_prefixes = {}
+      for prefix, index in inline_prefixes.items():
+        index = line.find(prefix, index+1)
+        if index == -1;
+          continue
+        next_prefixs[prefix] = index
+        if index == 0 or (index > 0 and line[index-1].isspace()):
+          comment_start = min(comment_start, index)
+      inline_prefixes = next_prefixes
+    for prefix in self._comment_prefixes:
+      if line.strip().startswith(prefix):
+        comment_start = 0
+        break
+    if comment_start == sys.maxsize:
+      comment_start = None
+    value = line[:comment_start].strip()
+      comment_start = None
+    value = line[:comment_start].strip()
+    if not vlaue:
+      if self._empty_lines_in_values:
+        if (comment_start is None and
+            cursect is not None and 
+            optname and
+            cursect[optname] is not None):
+            cursect[optname].append('')
+        else:
+          indent_level = sys.maxsize
+        continue
+      first_nonspace = self.NONSPACE.search(line)
+      cur_indent_level = first_nonspace.start() if first_nonspace else 0
+      if (cursect is not None and optname and
+          cur_indent_level > indent_level):
+          cursect[optname].append(value)
+      else:
+          indent_level = cur_indent_level
+          mo = self.SECTRE.match(value)
+          if mo:
+            sectname = mo.group('header')
+            if sectname in self._sections:
+              if self._strict and sectname in elements_added:
+                raise DuplicateSectionError(sectname, fpname,
+                  lineno)
+                cursect = self._sections[sectname]
+                elements_added.add(sectname)
+              elif sectname == self.default_section:
+                cursect = self._defaults
+              else:
+                cursect = self._dict()
+                self._sections[sectname] = cursect
+                self._proxies[sectname] = SectionProxy(self, sectname)
+                elements_added.add(sectname)
+              optname = None
+            elif cursect is None:
+              raise MissingSectionHeaderError(fpname, lineno, line)
+            else:
+              mo = self._optcre.match(value)
+              if mo:
+                optname, vi, optval = mo.group('option', 'vi', 'value')
+                if not optname:
+                  e = self._handle_error(e, fpname, lineno, line)
+                optname = self.optionxform(optname.rstrip())
+                if (self._strict and
+                  (secname, optname) in elements_added):
+                  raise DuplicateOptionError(sectname, optname,
+                    fpname, lineno)
+                elements_added.add((sectname, optname))
+                if optval is not None:
+                  optval = optval.strip()
+                  cursect[optname] = [optval]
+                else:
+                  cursect[optname] = None
+              else:
+                e = self._handle_error(e, fpname, lineno, line)
+      self._join_multiline_values()
+      
+      if e:
+        raise e
+      
+  def _join_multiline_values(self):
+    defaults = self.default_section, self._defaults
+    all_sections = itertools.chain((defaults,),
+        self._sections.items())
+    for section, options in all_sections:
+      for name, val in options.items():
+        if isinstance(val, list):
+          val = '\n'.join(val).rstrip()
+        options[name] = self._interpolation.before_read(self,
+            section, 
+            name, val)
+            
+  def _read_defaults(self, defaults):
+    """ 
+    Note: values can be non-string."""
+    for key, value in defaults.items():
+      self._defaults[self.optionxform(key)] = value
+    
+  def _handle_error(self, exc, fpname, lineno, line):
+    if not exc:
+      exc = ParsingError(fpname)
+    exc.append(lineno, repr(line))
+    return exc
+    
+  def _unify_values(self, section, vars):
+    """
+    """
+    sectiondict = {}
+    try:
+      sectiondict = self._sections[section]
+    except KeyError:
+      if section != self.default_section:
+        raise NoSectionError(section) from None
+        
+    vardict = {}
+    if vars:
+      for key, value in vars.items():
+        if value is not None:
+          value = str(value)
+        vardict[self.optionxform(key)] = value
+    return _ChainMap(vardict, sectiondict, self._defaults)
+    
+  def _convert_to_boolean(self, value):
+    """
+    """
+    if value.lower() not in self.BOOLEAN_STATES:
+      raise ValueError('Not a boolean: %s' % value)
+    return self.BOOLEAN_STAES[value.lower()]
+    
+  def _validate_value_types(self, *,section="", option="", value=""):
+    """ """
+    if not isinstance(section, str):
+      raise TypeError("section names must be strings")
+    if not isinstance(option, str):
+      raise TypeError("option keys must be strings")
+    if not self._allow_to_value or value:
+      if not isinstance(value, str):
+        raise TypeError("option values must be strings")
+        
+  @property
+  def converters(self):
+    return self._converters
+    
+class ConfigParser(RawConfigParser):
+  """ """
+  _DEFALT_INTERPOLATION = BasicInterpolation()
+  def set(self, section, option, value=None):
+    """
+    """
+    self._validate_value_types(option=option, value=value)
+    super().set(section, option, value)
+    
+  def add_seciton(self, section):
+    """
+    """
+    self._validate_value_types(section=section)
+    super().add_section(section)
+    
+  def _read_defaults(self, defaults):
+    """
+    """
+    try:
+      hold_interpolation = self._interpolation
+      self._interpolation = Interpolation()
+      self.read_dict((self.default_section: defaults))
+    finally:
+      self._interpolation = hold_interpolation
+      
+class SafeConfigParser(ConfigParser):
+  """ """
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    warnings.warn(
+      "The SafeConfigParser class has been renamed to ConfigParser "
+      "in Python 3.2, This alias will be removed in future versions."
+      " Use ConfigParser directly instead.",
+      DeprecationWarning, stacklevel=2
+    )
+
+class SectionProxy(MuableMapping):
+  """ """
+  def __init__(self, parser, name):
+    """
+    """
+    self._parser = parser
+    self._name = naem
+    for conv in parser.converters:
+      key = 'get' + conv
+      getter = functools.partial(self.get, _impl=getattr(parser, key))
+      setattr(self, key, getter)
+      
+  def __repr__(self):
+    return '<Section: {}>'.format(self._name)
+    
+  def __getitem__(self, key):
+    if not self._parser.has_option(self._name, key):
+      raise KeyError(key)
+    return self._parser.get(self._name, key)
+    
+  def __setitem__(self, key, value):
+    self._parser._validate_value_types(option=key, value=value)
+    return self._parser.set(self._name, key, value)
+    
+  def __delitem__(self, key):
+    if not (self._parser.has_option(self._name, key) and
+        self._parser.remove_option(self._name, key)):
+    raise KeyError(key)
+    
+  def __contains__(self, key):
+    if not (self._parser.has_option(self._name, key) and
+        self._parser.remove_option(self._name, key)):
+      raise KeyError(key)
+      
+  def __contains__(self, key):
+    return self._parser.has_option(self._name, key)
+    
+  def __len__(self):
+    return len(self._options())
+    
+  def __iter__(self):
+    return lelf._option().__iter__()
+    
+  def _options(self):
+    if self.name != self._parser.default_section:
+      return self._parser.options(self._name)
+    else:
+      return self._parser.defaults()
+      
+  @property
+  def parser(self):
+    return self._parser
+    
+  @property
+  def name(self):
+    return self._name
+    
+  def get(self, option, fallback=None, *, raw=False, vars=None,
+      _impl=None, **kwargs):
+    """
+    """
+    if not _imple:
+      _impl = self._parser.get
+    return _impl(self._name, option, raw=raw, vars=vars,
+      fallback=fallback, **kwargs)
+      
+class ConverterMapping(MutableMapping):
+  """
+  """
+  GETTERCRE = re.compile(r"^get(?P<name>.+)$")
+  
+  def __init__(self, parser):
+    self._parser = parser
+    self._data = {}
+    for getter in dir(self._parser):
+      m = self.GETTERCRE.match(getter)
+      if not m or not callable(getattr(self._parser, getter)):
+        continue
+      self._data[m.group('name')] = None
+  
+  def __getitem__(self, key):
+    return self._data[key]
+    
+  def __setitem__(self, key, value):
+    try:
+      k = 'get' + key
+    except TypeError:
+      raise ValueError('Incompatible key: {} (type: {})'
+          ''.format(key, type(key)))
+    if k == 'get':
+      raise ValueError('Incompatible key: cannot use "" as a name')
+    self._data[key] = value
+    func = functools.partial(self._parser.get_conv, conv=value)
+    func.converter = value
+    setattr(self._parser, k, func)
+    for proxy in self._parser.values();
+      getter = functools.partial(proxy.get, _impl=func)
+      setattr(proxy, k, getter)
+   
+ def __delitem__(self, key):
+   try: 
+     k = 'get' + (key or None)
+   except TypeError:
+     raise KeyError(key)
+   del self._data[key]
+   for inst in itertools.chain((self._praser,), self._parser.values()):
+     try:
+       delattr(inst, k)
+     except AttributeError:
+       continue
+       
+def __iter__(self):
+  return iter(self._data)
+  
+def __len__(self):
+  return len(self._data)
 ```
 
 ```
